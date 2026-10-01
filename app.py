@@ -9,13 +9,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# Google Sheets URL'leri
+# Google Sheets URL
 SHEET_ID = "1EFWWiyOe7kqwvEaSZeA3Kahgl9-Zy3LL6QzCpF3yt4I"
 
 def load_data(sheet_name):
     url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
     try:
         df = pd.read_csv(url)
+        # Boş sütun başlıklarını veya isimsiz sütunları temizle
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         return df
     except Exception as e:
         return pd.DataFrame()
@@ -54,19 +56,38 @@ if sayfa == "📊 Genel Durum":
     else:
         st.info("Henüz kayıtlı ikili maç bulunmuyor.")
 
-# 2. ÖĞRENCİ LİSTESİ
+# 2. ÖĞRENCİ LİSTESİ (SINIF VE ŞUBE FİLTRELİ)
 elif sayfa == "👨‍🎓 Öğrenci Listesi":
-    st.title("👨‍🎓 Öğrenci Listesi")
+    st.title("👨‍🎓 Öğrenci Listesi ve Sınıf Kontrolü")
+    
     if not df_ogrenciler.empty:
-        siniflar = ["Tümü"] + list(df_ogrenciler["Sinif"].astype(str).unique()) if "Sinif" in df_ogrenciler.columns else ["Tümü"]
-        secilen_sinif = st.selectbox("🎯 Sınıfa Göre Filtrele:", siniflar)
+        # Sınıf ve Şube Sütunlarını Kontrol Et
+        sinif_col = "Sinif" if "Sinif" in df_ogrenciler.columns else None
+        sube_col = "Sube" if "Sube" in df_ogrenciler.columns else None
         
-        if secilen_sinif != "Tümü":
-            filtre_df = df_ogrenciler[df_ogrenciler["Sinif"].astype(str) == secilen_sinif]
-        else:
-            filtre_df = df_ogrenciler
+        col_f1, col_f2 = st.columns(2)
+        
+        filtered_df = df_ogrenciler.copy()
+        
+        # Sınıf Filtresi
+        if sinif_col:
+            # Boş olmayan sınıfları al
+            siniflar = ["Tümü"] + sorted([str(x).split('.')[0] for x in df_ogrenciler[sinif_col].dropna().unique() if str(x) != 'nan'])
+            secilen_sinif = col_f1.selectbox("🎯 Sınıf Seçiniz:", siniflar)
             
-        st.dataframe(filtre_df, use_container_width=True)
+            if secilen_sinif != "Tümü":
+                filtered_df = filtered_df[filtered_df[sinif_col].astype(str).str.startswith(secilen_sinif)]
+        
+        # Şube Filtresi
+        if sube_col:
+            subeler = ["Tümü"] + sorted([str(x) for x in filtered_df[sube_col].dropna().unique() if str(x) != 'nan'])
+            secilen_sube = col_f2.selectbox("🏢 Şube Seçiniz:", subeler)
+            
+            if secilen_sube != "Tümü":
+                filtered_df = filtered_df[filtered_df[sube_col].astype(str) == secilen_sube]
+                
+        st.info(f"🔍 Toplam **{len(filtered_df)}** öğrenci listeleniyor.")
+        st.dataframe(filtered_df, use_container_width=True)
     else:
         st.warning("Google Sheets üzerinde 'Ogrenciler' sayfasında kayıt bulunamadı.")
 
@@ -76,7 +97,7 @@ elif sayfa == "🎮 Oyunlar":
     if not df_oyunlar.empty:
         st.dataframe(df_oyunlar, use_container_width=True)
     else:
-        st.warning("Google Sheets 'Oyunlar' sekmesinde henüz oyun tanımlanmamış. Mangala, Dokuztaş vb. oyunları tablonuza ekleyebilirsiniz.")
+        st.warning("Google Sheets 'Oyunlar' sekmesinde henüz oyun tanımlanmamış.")
 
 # 4. İKİLİ MAÇLAR
 elif sayfa == "⚔️ İkili Maçlar":
@@ -84,7 +105,7 @@ elif sayfa == "⚔️ İkili Maçlar":
     if not df_ikili.empty:
         st.dataframe(df_ikili, use_container_width=True)
     else:
-        st.info("Kayıtlı maç verisi yok.")
+        st.info("Henüz kayıtlı maç verisi yok. 'Veri Girişi Formu' üzerinden yeni maç ekleyebilirsiniz.")
 
 # 5. BİREYSEL PERFORMANS
 elif sayfa == "⭐ Bireysel Performans":
@@ -106,28 +127,26 @@ elif sayfa == "➕ Veri Girişi Formu":
     
     st.divider()
 
-    # İKİLİ MAÇ KAYDI FORMALARI
+    # İKİLİ MAÇ KAYDI
     if kayit_turu == "⚔️ İkili Maç Kaydı":
         st.subheader("⚔️ İkili Maç Bilgileri")
         
-        # Tarih Seçici (Hafızada Tutulur)
+        # Tarih Seçici (Hafızada Sabit Kalır)
         secilen_tarih = st.date_input(
             "📅 Maç Tarihi:",
             value=st.session_state.selected_date,
-            help="Seçtiğiniz tarih siz değiştirene kadar sonraki maç kaydı girişlerinizde sabit kalır."
+            help="Seçtiğiniz tarih siz değiştirine kadar sonraki maç kayıtlarında sabit kalır."
         )
         st.session_state.selected_date = secilen_tarih
         
-        # Oyunlar Listesi Hazırlığı
         oyun_listesi = df_oyunlar["Oyun_Adi"].dropna().tolist() if not df_oyunlar.empty and "Oyun_Adi" in df_oyunlar.columns else []
-        # Öğrenciler Listesi Hazırlığı
         ogrenci_listesi = df_ogrenciler["Ad_Soyad"].dropna().tolist() if not df_ogrenciler.empty and "Ad_Soyad" in df_ogrenciler.columns else []
         
         with st.form("ikili_mac_formu", clear_on_submit=False):
             if oyun_listesi:
                 oyun_adi = st.selectbox("🎮 Oyun Adı:", oyun_listesi)
             else:
-                oyun_adi = st.text_input("🎮 Oyun Adı (Google Sheets Oyunlar sekmesini doldurabilirsiniz):")
+                oyun_adi = st.text_input("🎮 Oyun Adı:")
                 
             col1, col2 = st.columns(2)
             with col1:
@@ -149,7 +168,7 @@ elif sayfa == "➕ Veri Girişi Formu":
             
             submitted = st.form_submit_button("💾 Maçı Kaydet")
             if submitted:
-                st.success(f"✅ {secilen_tarih.strftime('%d.%m.%Y')} tarihli {oyun_adi} maçı kaydı alındı! (Tarih bir sonraki kayıt için sabit tutuldu)")
+                st.success(f"✅ {secilen_tarih.strftime('%d.%m.%Y')} tarihli {oyun_adi} maçı kaydı alındı!")
 
     # BİREYSEL PERFORMANS KAYDI
     elif kayit_turu == "⭐ Bireysel Performans Kaydı":
@@ -184,8 +203,8 @@ elif sayfa == "➕ Veri Girişi Formu":
         st.subheader("👨‍🎓 Yeni Öğrenci Ekle")
         with st.form("yeni_ogrenci_formu"):
             ad_soyad = st.text_input("Ad Soyad:")
-            sinif = st.text_input("Sınıf (Örn: 5):")
-            sube = st.text_input("Şube (Örn: A):")
+            sinif = st.text_input("Sınıf (Örn: 1, 2, 3):")
+            sube = st.text_input("Şube (Örn: A, B):")
             
             submitted = st.form_submit_button("💾 Öğrenciyi Kaydet")
             if submitted:
